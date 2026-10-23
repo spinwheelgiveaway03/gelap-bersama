@@ -1,0 +1,904 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>GELAP BERSAMA</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; user-select:none; -webkit-user-select:none; }
+    html, body { width:100%; height:100%; overflow:hidden; background:#0a0a0a; font-family: system-ui, -apple-system, sans-serif; color:#ddd; }
+    #gameCanvas { position:absolute; inset:0; width:100%; height:100%; display:block; }
+    #ui { position:absolute; inset:0; pointer-events:none; z-index:10; }
+    #ui > * { pointer-events:auto; }
+
+    .screen { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; background:radial-gradient(ellipse at center, #1a0a0a 0%, #050505 70%); }
+    .screen.hidden { display:none !important; }
+    h1 { font-size:clamp(1.8rem, 6vw, 2.8rem); letter-spacing:0.12em; color:#c33; text-shadow:0 0 24px #f00; margin-bottom:1.5rem; text-align:center; }
+    h2 { color:#c66; margin-bottom:1rem; }
+    .btn { background:#1a1a1a; border:1px solid #444; color:#ccc; padding:12px 28px; margin:6px; font-size:1rem; cursor:pointer; min-width:200px; transition:0.15s; border-radius:4px; }
+    .btn:hover, .btn:active { background:#2a1010; border-color:#a33; color:#fff; }
+    .btn.primary { border-color:#a33; color:#f88; }
+    input[type=text] { background:#111; border:1px solid #444; color:#eee; padding:12px; font-size:1.1rem; width:180px; text-align:center; letter-spacing:0.2em; border-radius:4px; text-transform:uppercase; }
+    #status { position:absolute; top:10px; left:10px; font-size:0.8rem; color:#888; z-index:20; }
+    #roomInfo { margin:10px 0; font-size:1.15rem; }
+    #playerList { list-style:none; margin:12px 0; text-align:left; min-width:240px; max-height:200px; overflow-y:auto; }
+    #playerList li { padding:6px 0; border-bottom:1px solid #222; font-size:0.95rem; }
+
+    #hud.hidden { display:none !important; }
+    #crosshair { position:absolute; top:50%; left:50%; width:6px; height:6px; border:1px solid rgba(255,255,255,0.5); border-radius:50%; transform:translate(-50%,-50%); pointer-events:none; }
+    #hpBar { position:absolute; bottom:18px; left:16px; width:160px; height:10px; background:#333; border:1px solid #555; }
+    #hpFill { height:100%; background:#a33; width:100%; transition:width 0.3s; }
+    #objective { position:absolute; top:16px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,0.7); padding:6px 14px; border:1px solid #444; font-size:0.9rem; white-space:nowrap; }
+    #jumpscareTimer, #knockTimer { position:absolute; top:38%; left:50%; transform:translateX(-50%); font-size:2.8rem; color:#f33; text-shadow:0 0 20px #f00; display:none; font-weight:bold; }
+    #reviveProgress { position:absolute; bottom:100px; left:50%; transform:translateX(-50%); width:180px; height:8px; background:#333; display:none; }
+    #reviveFill { height:100%; background:#3a3; width:0%; }
+    #notif { position:absolute; top:60px; left:50%; transform:translateX(-50%); background:rgba(80,0,0,0.85); padding:8px 16px; border-radius:4px; display:none; font-size:0.95rem; }
+
+    #mobileControls { position:absolute; inset:0; pointer-events:none; display:none; }
+    #joystickZone { position:absolute; bottom:24px; left:24px; width:130px; height:130px; border-radius:50%; background:rgba(255,255,255,0.08); pointer-events:auto; touch-action:none; }
+    #joystickKnob { position:absolute; width:54px; height:54px; border-radius:50%; background:rgba(255,255,255,0.25); top:38px; left:38px; }
+    .actionBtn { position:absolute; width:58px; height:58px; border-radius:50%; background:rgba(255,255,255,0.12); border:1px solid #555; color:#eee; font-size:0.65rem; display:flex; align-items:center; justify-content:center; pointer-events:auto; touch-action:none; }
+    #btnInteract { bottom:36px; right:150px; }
+    #btnFlash { bottom:100px; right:85px; }
+    #btnKnife { bottom:36px; right:36px; }
+    #btnCrouch { bottom:100px; right:185px; }
+    #btnMic { top:16px; right:16px; width:48px; height:48px; }
+    #btnRevive { bottom:165px; right:36px; display:none; background:rgba(50,120,50,0.4); }
+    #btnDebugJS { top:16px; left:50%; transform:translateX(-50%); width:auto; padding:0 12px; height:36px; border-radius:18px; font-size:0.7rem; }
+
+    #spectatorUI { position:absolute; bottom:28px; left:50%; transform:translateX(-50%); display:none; background:rgba(0,0,0,0.8); padding:10px 20px; border:1px solid #444; border-radius:6px; align-items:center; gap:12px; }
+    #spectatorUI .btn { min-width:auto; padding:8px 14px; margin:0; }
+
+    .hint { font-size:0.8rem; color:#666; margin-top:12px; text-align:center; max-width:280px; }
+  </style>
+</head>
+<body>
+  <canvas id="gameCanvas"></canvas>
+  <div id="ui">
+    <div id="status">Menghubungkan...</div>
+
+    <div id="mainMenu" class="screen">
+      <h1>GELAP BERSAMA</h1>
+      <button class="btn primary" id="btnSolo">MAIN SOLO</button>
+      <button class="btn" id="btnCreate">BUAT ROOM</button>
+      <button class="btn" id="btnJoin">JOIN ROOM</button>
+      <button class="btn" id="btnQuick">QUICK JOIN</button>
+      <p class="hint">Survival Horror 3D Multiplayer • 1–4 Pemain<br>Buka beberapa tab untuk uji lokal</p>
+    </div>
+
+    <div id="joinScreen" class="screen hidden">
+      <h2>Masukkan Room ID</h2>
+      <input type="text" id="roomIdInput" maxlength="6" placeholder="ABC123" autocomplete="off" />
+      <div style="margin-top:16px">
+        <button class="btn primary" id="btnDoJoin">JOIN</button>
+        <button class="btn" id="btnBackJoin">KEMBALI</button>
+      </div>
+    </div>
+
+    <div id="lobbyScreen" class="screen hidden">
+      <h2>LOBBY</h2>
+      <div id="roomInfo">Room ID: <strong id="displayRoomId">-</strong>
+        <button class="btn" id="btnCopyId" style="min-width:auto;padding:5px 10px;font-size:0.85rem;margin-left:8px">SALIN</button>
+      </div>
+      <ul id="playerList"></ul>
+      <button class="btn" id="btnReady">SIAP</button>
+      <button class="btn" id="btnMicLobby">MIC: OFF</button>
+      <button class="btn primary" id="btnStart" style="display:none">MULAI GAME</button>
+      <button class="btn" id="btnLeave">KELUAR ROOM</button>
+    </div>
+
+    <div id="hud" class="hidden">
+      <div id="crosshair"></div>
+      <div id="hpBar"><div id="hpFill"></div></div>
+      <div id="objective">Cari kunci & aktifkan generator • Tekan J untuk uji jumpscare</div>
+      <div id="jumpscareTimer">5</div>
+      <div id="knockTimer">60</div>
+      <div id="reviveProgress"><div id="reviveFill"></div></div>
+      <div id="notif"></div>
+      <div id="spectatorUI">
+        <button class="btn" id="btnPrevSpec">◀</button>
+        <span id="specName">-</span>
+        <button class="btn" id="btnNextSpec">▶</button>
+      </div>
+    </div>
+
+    <div id="mobileControls">
+      <div id="joystickZone"><div id="joystickKnob"></div></div>
+      <div class="actionBtn" id="btnInteract">E</div>
+      <div class="actionBtn" id="btnFlash">F</div>
+      <div class="actionBtn" id="btnKnife">PISAU</div>
+      <div class="actionBtn" id="btnCrouch">C</div>
+      <div class="actionBtn" id="btnMic">MIC</div>
+      <div class="actionBtn" id="btnRevive">TOLONG</div>
+      <div class="actionBtn" id="btnDebugJS">JUMPSCARE</div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+  <script type="module">
+    import * as THREE from 'three';
+    import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+
+    const socket = io({ transports: ['websocket', 'polling'] });
+    let myId = null;
+    let roomId = null;
+    let isHost = false;
+    let gameState = 'menu';
+    const remotePlayers = new Map();
+    const localPlayer = {
+      position: new THREE.Vector3(0, 1.6, 5),
+      rotation: { x: 0, y: 0 },
+      anim: 'idle',
+      flashlight: false,
+      status: 'alive',
+      hp: 100
+    };
+    let ghostMesh = null;
+    let scene, camera, renderer, controls, clock;
+    const keys = {};
+    const isMobile = /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent) || ('ontouchstart' in window);
+    const joystick = { active: false, dx: 0, dy: 0 };
+    const peerConnections = new Map();
+    let localStream = null;
+    let micOn = false;
+    let lastSend = 0;
+    let jumpscareActive = false;
+    let knockActive = false;
+    let reviveTargetId = null;
+    let reviveHoldStart = 0;
+    let spectatorIds = [];
+    let spectatorIndex = 0;
+
+    function $(id) { return document.getElementById(id); }
+    function show(id) { $(id).classList.remove('hidden'); }
+    function hide(id) { $(id).classList.add('hidden'); }
+    function setStatus(t) { $('status').textContent = t; }
+    function showNotif(msg, ms = 2500) {
+      const n = $('notif');
+      n.textContent = msg;
+      n.style.display = 'block';
+      setTimeout(() => n.style.display = 'none', ms);
+    }
+
+    // ===== SOCKET =====
+    socket.on('connect', () => {
+      myId = socket.id;
+      setStatus('Terhubung • ' + myId.slice(0, 6));
+    });
+    socket.on('disconnect', () => setStatus('Terputus dari server'));
+
+    socket.on('roomUpdate', (data) => {
+      updateLobbyList(data.players);
+      isHost = data.hostId === myId;
+      $('btnStart').style.display = isHost ? 'inline-block' : 'none';
+    });
+
+    socket.on('gameStart', (data) => {
+      hide('lobbyScreen');
+      hide('mainMenu');
+      $('hud').classList.remove('hidden');
+      if (isMobile) $('mobileControls').style.display = 'block';
+      gameState = 'playing';
+      remotePlayers.forEach(rp => scene.remove(rp.mesh));
+      remotePlayers.clear();
+
+      data.players.forEach(p => {
+        if (p.id === myId) {
+          localPlayer.position.set(p.position.x, p.position.y, p.position.z);
+          localPlayer.status = 'alive';
+          localPlayer.hp = 100;
+          $('hpFill').style.width = '100%';
+          if (controls) {
+            controls.getObject().position.copy(localPlayer.position);
+          }
+        } else {
+          createRemotePlayer(p);
+        }
+      });
+      if (data.ghost) createGhost(data.ghost);
+      if (!isMobile && controls) {
+        setTimeout(() => controls.lock(), 300);
+      }
+      showNotif('Game dimulai! Jelajahi & bertahan hidup');
+    });
+
+    socket.on('playerMoved', (data) => {
+      const rp = remotePlayers.get(data.id);
+      if (!rp) return;
+      rp.targetPos.set(data.position.x, data.position.y, data.position.z);
+      rp.targetRotY = data.rotation.y || 0;
+      if (rp.light) rp.light.visible = !!data.flashlight;
+    });
+
+    socket.on('jumpscareStart', (data) => {
+      if (data.targetId === myId) {
+        jumpscareActive = true;
+        $('jumpscareTimer').style.display = 'block';
+        let t = 5;
+        $('jumpscareTimer').textContent = t;
+        const iv = setInterval(() => {
+          t--;
+          $('jumpscareTimer').textContent = t;
+          if (t <= 0) {
+            clearInterval(iv);
+            $('jumpscareTimer').style.display = 'none';
+          }
+        }, 1000);
+        showNotif('HANTU MENYERANG! Tekan PISAU / klik kiri!', 4000);
+      }
+    });
+
+    socket.on('jumpscareSuccess', () => {
+      jumpscareActive = false;
+      $('jumpscareTimer').style.display = 'none';
+      showNotif('Hantu berhasil dilawan!');
+    });
+
+    socket.on('playerKnocked', (data) => {
+      if (data.id === myId) {
+        localPlayer.status = 'knocked';
+        knockActive = true;
+        jumpscareActive = false;
+        $('jumpscareTimer').style.display = 'none';
+        $('knockTimer').style.display = 'block';
+        let t = 60;
+        $('knockTimer').textContent = t;
+        const iv = setInterval(() => {
+          t--;
+          $('knockTimer').textContent = t;
+          if (t <= 0) clearInterval(iv);
+        }, 1000);
+        showNotif('Kamu KO! Tunggu bantuan teman', 4000);
+      } else {
+        showNotif('Teman membutuhkan bantuan!', 3000);
+        $('btnRevive').style.display = 'flex';
+        reviveTargetId = data.id;
+      }
+      const rp = remotePlayers.get(data.id);
+      if (rp) {
+        rp.mesh.rotation.x = Math.PI / 2;
+        rp.mesh.position.y = 0.3;
+      }
+    });
+
+    socket.on('reviveSuccess', (data) => {
+      if (data.targetId === myId) {
+        localPlayer.status = 'alive';
+        localPlayer.hp = 40;
+        knockActive = false;
+        $('knockTimer').style.display = 'none';
+        $('hpFill').style.width = '40%';
+        showNotif('Kamu diselamatkan!');
+      }
+      $('btnRevive').style.display = 'none';
+      $('reviveProgress').style.display = 'none';
+      const rp = remotePlayers.get(data.targetId);
+      if (rp) {
+        rp.mesh.rotation.x = 0;
+        rp.mesh.position.y = 0;
+      }
+    });
+
+    socket.on('playerDied', (data) => {
+      if (data.id === myId) {
+        localPlayer.status = 'dead';
+        knockActive = false;
+        gameState = 'spectator';
+        $('knockTimer').style.display = 'none';
+        $('spectatorUI').style.display = 'flex';
+        updateSpectatorList();
+        showNotif('Kamu mati. Mode spectator.');
+      }
+      const rp = remotePlayers.get(data.id);
+      if (rp) {
+        rp.mesh.rotation.x = Math.PI / 2;
+        rp.mesh.position.y = 0.2;
+      }
+    });
+
+    socket.on('gameOver', (data) => {
+      alert('GAME OVER\n' + (data.reason || 'Semua pemain mati'));
+      location.reload();
+    });
+
+    socket.on('micUpdate', (data) => {
+      // update lobby indicator if needed
+    });
+
+    // WebRTC
+    socket.on('webrtc-offer', async (data) => {
+      try {
+        const pc = await createPeer(data.from, false);
+        await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        socket.emit('webrtc-answer', { to: data.from, answer });
+      } catch (e) { console.warn('offer error', e); }
+    });
+    socket.on('webrtc-answer', async (data) => {
+      const pc = peerConnections.get(data.from);
+      if (pc) {
+        try { await pc.setRemoteDescription(new RTCSessionDescription(data.answer)); } catch (e) {}
+      }
+    });
+    socket.on('webrtc-ice', async (data) => {
+      const pc = peerConnections.get(data.from);
+      if (pc && data.candidate) {
+        try { await pc.addIceCandidate(new RTCIceCandidate(data.candidate)); } catch (e) {}
+      }
+    });
+
+    // ===== THREE.JS =====
+    function initThree() {
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x050508);
+      scene.fog = new THREE.FogExp2(0x0a0a0c, 0.035);
+
+      camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.08, 80);
+      camera.position.set(0, 1.6, 5);
+
+      renderer = new THREE.WebGLRenderer({ canvas: $('gameCanvas'), antialias: false, powerPreference: 'high-performance' });
+      renderer.setSize(innerWidth, innerHeight);
+      renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
+      renderer.shadowMap.enabled = false;
+
+      const amb = new THREE.AmbientLight(0x1a1a22, 0.6);
+      scene.add(amb);
+      const dir = new THREE.DirectionalLight(0x334455, 0.35);
+      dir.position.set(8, 25, 10);
+      scene.add(dir);
+
+      // Floor
+      const floor = new THREE.Mesh(
+        new THREE.PlaneGeometry(100, 100),
+        new THREE.MeshStandardMaterial({ color: 0x0e0e10, roughness: 0.9, metalness: 0.1 })
+      );
+      floor.rotation.x = -Math.PI / 2;
+      scene.add(floor);
+
+      // Simple hospital corridor
+      const wallMat = new THREE.MeshStandardMaterial({ color: 0x16161a, roughness: 0.85 });
+      const wallMatDark = new THREE.MeshStandardMaterial({ color: 0x0c0c0e });
+
+      // Long walls
+      for (let z = 10; z >= -50; z -= 8) {
+        const left = new THREE.Mesh(new THREE.BoxGeometry(0.4, 3.5, 8), wallMat);
+        left.position.set(-6, 1.75, z);
+        scene.add(left);
+        const right = left.clone();
+        right.position.x = 6;
+        scene.add(right);
+      }
+      // End wall
+      const end = new THREE.Mesh(new THREE.BoxGeometry(12.4, 3.5, 0.4), wallMatDark);
+      end.position.set(0, 1.75, -54);
+      scene.add(end);
+      // Ceiling strips
+      for (let z = 8; z >= -50; z -= 6) {
+        const ceil = new THREE.Mesh(new THREE.BoxGeometry(12, 0.2, 1), new THREE.MeshStandardMaterial({ color: 0x1a1a1e }));
+        ceil.position.set(0, 3.6, z);
+        scene.add(ceil);
+      }
+      // Pillars / doors frames
+      for (let z = -5; z >= -45; z -= 12) {
+        const doorL = new THREE.Mesh(new THREE.BoxGeometry(0.3, 2.4, 0.15), wallMat);
+        doorL.position.set(-5.7, 1.2, z);
+        scene.add(doorL);
+        const doorR = doorL.clone();
+        doorR.position.x = 5.7;
+        scene.add(doorR);
+      }
+      // Some props
+      const crateMat = new THREE.MeshStandardMaterial({ color: 0x2a2218 });
+      for (let i = 0; i < 6; i++) {
+        const c = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.8, 0.8), crateMat);
+        c.position.set((Math.random() - 0.5) * 8, 0.4, -8 - Math.random() * 35);
+        scene.add(c);
+      }
+
+      // Flickering light
+      const flick = new THREE.PointLight(0xffaa66, 0.8, 12);
+      flick.position.set(0, 3.2, -15);
+      scene.add(flick);
+      setInterval(() => {
+        flick.intensity = 0.3 + Math.random() * 0.7;
+      }, 120);
+
+      controls = new PointerLockControls(camera, document.body);
+      scene.add(controls.getObject());
+
+      clock = new THREE.Clock();
+
+      window.addEventListener('resize', () => {
+        camera.aspect = innerWidth / innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(innerWidth, innerHeight);
+      });
+
+      window.addEventListener('keydown', e => {
+        keys[e.code] = true;
+        if (e.code === 'KeyF') {
+          localPlayer.flashlight = !localPlayer.flashlight;
+        }
+        if (e.code === 'KeyJ' && gameState === 'playing' && localPlayer.status === 'alive') {
+          socket.emit('debugJumpscare');
+        }
+        if (e.code === 'KeyE' && reviveTargetId && localPlayer.status === 'alive') {
+          startReviveHold();
+        }
+      });
+      window.addEventListener('keyup', e => {
+        keys[e.code] = false;
+        if (e.code === 'KeyE') stopReviveHold();
+      });
+
+      window.addEventListener('mousedown', e => {
+        if (e.button === 0 && gameState === 'playing') {
+          if (jumpscareActive || localPlayer.status === 'alive') {
+            socket.emit('knifeHit');
+          }
+        }
+      });
+
+      // Click to lock pointer on desktop
+      $('gameCanvas').addEventListener('click', () => {
+        if (gameState === 'playing' && !isMobile && localPlayer.status === 'alive') {
+          controls.lock();
+        }
+      });
+
+      animate();
+    }
+
+    function createRemotePlayer(data) {
+      const group = new THREE.Group();
+      const body = new THREE.Mesh(
+        new THREE.CapsuleGeometry(0.32, 0.85, 4, 8),
+        new THREE.MeshStandardMaterial({ color: 0x3a3a48 })
+      );
+      body.position.y = 0.85;
+      group.add(body);
+      const head = new THREE.Mesh(
+        new THREE.SphereGeometry(0.22, 8, 8),
+        new THREE.MeshStandardMaterial({ color: 0xc4a88a })
+      );
+      head.position.y = 1.65;
+      group.add(head);
+      // Simple arms
+      const armMat = new THREE.MeshStandardMaterial({ color: 0x3a3a48 });
+      const armL = new THREE.Mesh(new THREE.CapsuleGeometry(0.08, 0.45, 3, 6), armMat);
+      armL.position.set(-0.4, 1.1, 0);
+      armL.rotation.z = 0.3;
+      group.add(armL);
+      const armR = armL.clone();
+      armR.position.x = 0.4;
+      armR.rotation.z = -0.3;
+      group.add(armR);
+
+      const light = new THREE.SpotLight(0xffffee, 1.0, 16, Math.PI / 7, 0.35);
+      light.position.set(0, 1.45, 0.25);
+      const target = new THREE.Object3D();
+      target.position.set(0, 1.4, -4);
+      group.add(target);
+      light.target = target;
+      group.add(light);
+      light.visible = !!data.flashlight;
+
+      // Name label (sprite simple)
+      const canvas = document.createElement('canvas');
+      canvas.width = 128; canvas.height = 32;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = 'rgba(0,0,0,0.6)';
+      ctx.fillRect(0, 0, 128, 32);
+      ctx.fillStyle = '#ccc';
+      ctx.font = '14px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(data.name || 'Pemain', 64, 20);
+      const tex = new THREE.CanvasTexture(canvas);
+      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true }));
+      sprite.scale.set(1.2, 0.3, 1);
+      sprite.position.y = 2.05;
+      group.add(sprite);
+
+      group.position.set(data.position.x, 0, data.position.z);
+      group.rotation.y = data.rotation?.y || 0;
+      scene.add(group);
+
+      remotePlayers.set(data.id, {
+        mesh: group,
+        light,
+        targetPos: group.position.clone(),
+        targetRotY: group.rotation.y,
+        data
+      });
+    }
+
+    function createGhost(g) {
+      if (ghostMesh) scene.remove(ghostMesh);
+      const geo = new THREE.CapsuleGeometry(0.38, 1.1, 4, 8);
+      const mat = new THREE.MeshStandardMaterial({
+        color: 0x0a0a12,
+        emissive: 0x1a001a,
+        transparent: true,
+        opacity: 0.88
+      });
+      ghostMesh = new THREE.Mesh(geo, mat);
+      ghostMesh.position.set(g.position.x, 1.15, g.position.z);
+      scene.add(ghostMesh);
+      // Eyes
+      const eyeMat = new THREE.MeshBasicMaterial({ color: 0xff2222 });
+      const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.06, 6, 6), eyeMat);
+      eyeL.position.set(-0.12, 1.55, 0.28);
+      ghostMesh.add(eyeL);
+      const eyeR = eyeL.clone();
+      eyeR.position.x = 0.12;
+      ghostMesh.add(eyeR);
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+      const dt = Math.min(clock.getDelta(), 0.05);
+
+      if (gameState === 'playing' && localPlayer.status === 'alive') {
+        const speed = (keys['ShiftLeft'] || keys['ShiftRight']) ? 5.2 : 3.0;
+        const dir = new THREE.Vector3();
+        if (keys['KeyW'] || joystick.dy < -0.25) dir.z -= 1;
+        if (keys['KeyS'] || joystick.dy > 0.25) dir.z += 1;
+        if (keys['KeyA'] || joystick.dx < -0.25) dir.x -= 1;
+        if (keys['KeyD'] || joystick.dx > 0.25) dir.x += 1;
+
+        if (dir.lengthSq() > 0) {
+          dir.normalize();
+          const forward = new THREE.Vector3();
+          camera.getWorldDirection(forward);
+          forward.y = 0;
+          forward.normalize();
+          const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0, 1, 0)).normalize();
+          const move = new THREE.Vector3();
+          move.addScaledVector(forward, -dir.z);
+          move.addScaledVector(right, dir.x);
+          move.normalize().multiplyScalar(speed * dt);
+          controls.getObject().position.add(move);
+          localPlayer.anim = (keys['ShiftLeft'] || keys['ShiftRight']) ? 'run' : 'walk';
+        } else {
+          localPlayer.anim = keys['KeyC'] || keys['ControlLeft'] ? 'crouch' : 'idle';
+        }
+
+        localPlayer.position.copy(controls.getObject().position);
+        localPlayer.rotation.y = controls.getObject().rotation.y;
+
+        const now = performance.now();
+        if (now - lastSend > 50) {
+          lastSend = now;
+          socket.emit('playerUpdate', {
+            position: { x: localPlayer.position.x, y: localPlayer.position.y, z: localPlayer.position.z },
+            rotation: { y: localPlayer.rotation.y },
+            anim: localPlayer.anim,
+            flashlight: localPlayer.flashlight
+          });
+        }
+      } else if (localPlayer.status === 'knocked') {
+        // Camera low
+        if (controls) {
+          controls.getObject().position.y = 0.4;
+        }
+      } else if (gameState === 'spectator' && spectatorIds.length) {
+        const targetId = spectatorIds[spectatorIndex];
+        const rp = remotePlayers.get(targetId);
+        if (rp) {
+          camera.position.lerp(
+            new THREE.Vector3(rp.mesh.position.x, rp.mesh.position.y + 1.7, rp.mesh.position.z + 0.1),
+            0.08
+          );
+        }
+      }
+
+      // Interpolate remotes
+      remotePlayers.forEach(rp => {
+        rp.mesh.position.x += (rp.targetPos.x - rp.mesh.position.x) * 0.18;
+        rp.mesh.position.z += (rp.targetPos.z - rp.mesh.position.z) * 0.18;
+        if (rp.mesh.rotation.x < 0.1) {
+          rp.mesh.position.y = 0;
+        }
+        let dy = rp.targetRotY - rp.mesh.rotation.y;
+        while (dy > Math.PI) dy -= Math.PI * 2;
+        while (dy < -Math.PI) dy += Math.PI * 2;
+        rp.mesh.rotation.y += dy * 0.18;
+      });
+
+      // Ghost simple move
+      if (ghostMesh) {
+        const t = Date.now() * 0.0004;
+        ghostMesh.position.x = Math.sin(t) * 4;
+        ghostMesh.position.z = -20 + Math.cos(t * 0.7) * 8;
+        ghostMesh.rotation.y = t;
+      }
+
+      // Revive hold progress
+      if (reviveHoldStart > 0) {
+        const prog = Math.min(1, (performance.now() - reviveHoldStart) / 5000);
+        $('reviveFill').style.width = (prog * 100) + '%';
+        if (prog >= 1 && reviveTargetId) {
+          socket.emit('finishRevive', reviveTargetId);
+          stopReviveHold();
+        }
+      }
+
+      renderer.render(scene, camera);
+    }
+
+    function startReviveHold() {
+      if (!reviveTargetId || localPlayer.status !== 'alive') return;
+      const rp = remotePlayers.get(reviveTargetId);
+      if (!rp) return;
+      const dist = localPlayer.position.distanceTo(rp.mesh.position);
+      if (dist > 2.8) {
+        showNotif('Terlalu jauh untuk menolong');
+        return;
+      }
+      reviveHoldStart = performance.now();
+      $('reviveProgress').style.display = 'block';
+      $('reviveFill').style.width = '0%';
+      socket.emit('startRevive', reviveTargetId);
+    }
+    function stopReviveHold() {
+      reviveHoldStart = 0;
+      $('reviveProgress').style.display = 'none';
+    }
+
+    function updateSpectatorList() {
+      spectatorIds = [];
+      remotePlayers.forEach((rp, id) => {
+        if (rp.data && rp.data.status !== 'dead') spectatorIds.push(id);
+      });
+      // also check from last known
+      if (spectatorIds.length === 0) {
+        remotePlayers.forEach((_, id) => spectatorIds.push(id));
+      }
+      spectatorIndex = 0;
+      updateSpecName();
+    }
+    function updateSpecName() {
+      if (!spectatorIds.length) {
+        $('specName').textContent = 'Tidak ada pemain';
+        return;
+      }
+      const id = spectatorIds[spectatorIndex];
+      const rp = remotePlayers.get(id);
+      $('specName').textContent = (rp && rp.data && rp.data.name) || id.slice(0, 6);
+    }
+
+    // ===== UI =====
+    $('btnCreate').onclick = () => {
+      socket.emit('createRoom', { name: 'Host-' + Math.floor(Math.random()*99) }, (res) => {
+        if (res && res.ok) {
+          roomId = res.roomId;
+          $('displayRoomId').textContent = roomId;
+          hide('mainMenu');
+          show('lobbyScreen');
+          updateLobbyList(res.players);
+        }
+      });
+    };
+
+    $('btnJoin').onclick = () => { hide('mainMenu'); show('joinScreen'); };
+    $('btnBackJoin').onclick = () => { hide('joinScreen'); show('mainMenu'); };
+    $('btnDoJoin').onclick = () => {
+      const id = $('roomIdInput').value.trim().toUpperCase();
+      if (!id) return alert('Masukkan Room ID');
+      socket.emit('joinRoom', { roomId: id, name: 'Pemain-' + Math.floor(Math.random()*99) }, (res) => {
+        if (res && res.ok) {
+          roomId = res.roomId;
+          $('displayRoomId').textContent = roomId;
+          hide('joinScreen');
+          show('lobbyScreen');
+          updateLobbyList(res.players);
+        } else {
+          alert((res && res.error) || 'Gagal join');
+        }
+      });
+    };
+
+    $('btnQuick').onclick = () => {
+      socket.emit('quickJoin', { name: 'Pemain-' + Math.floor(Math.random()*99) }, (res) => {
+        if (res && res.ok) {
+          roomId = res.roomId;
+          $('displayRoomId').textContent = roomId;
+          hide('mainMenu');
+          show('lobbyScreen');
+          updateLobbyList(res.players);
+        } else {
+          alert((res && res.error) || 'Tidak ada room. Buat room baru.');
+        }
+      });
+    };
+
+    $('btnSolo').onclick = () => {
+      socket.emit('createRoom', { name: 'Solo' }, (res) => {
+        if (res && res.ok) {
+          roomId = res.roomId;
+          setTimeout(() => socket.emit('startGame'), 200);
+        }
+      });
+    };
+
+    $('btnStart').onclick = () => socket.emit('startGame');
+    $('btnLeave').onclick = () => { socket.emit('leaveRoom'); location.reload(); };
+    $('btnCopyId').onclick = () => {
+      if (roomId) {
+        navigator.clipboard.writeText(roomId).then(() => showNotif('Room ID disalin: ' + roomId)).catch(() => alert(roomId));
+      }
+    };
+
+    $('btnReady').onclick = function () {
+      const ready = this.textContent === 'SIAP';
+      socket.emit('setReady', ready);
+      this.textContent = ready ? 'BATAL SIAP' : 'SIAP';
+    };
+
+    $('btnMicLobby').onclick = toggleMic;
+    $('btnMic').onclick = toggleMic;
+
+    async function toggleMic() {
+      if (!micOn) {
+        try {
+          localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+          micOn = true;
+          $('btnMicLobby').textContent = 'MIC: ON';
+          socket.emit('micState', true);
+          remotePlayers.forEach((_, id) => createPeer(id, true));
+          showNotif('Mikrofon aktif');
+        } catch (e) {
+          alert('Izin mikrofon ditolak atau tidak tersedia');
+        }
+      } else {
+        if (localStream) localStream.getTracks().forEach(t => t.stop());
+        localStream = null;
+        micOn = false;
+        $('btnMicLobby').textContent = 'MIC: OFF';
+        socket.emit('micState', false);
+        peerConnections.forEach(pc => pc.close());
+        peerConnections.clear();
+        showNotif('Mikrofon mati');
+      }
+    }
+
+    async function createPeer(remoteId, initiator) {
+      if (peerConnections.has(remoteId)) return peerConnections.get(remoteId);
+      const pc = new RTCPeerConnection({
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' }
+        ]
+      });
+      peerConnections.set(remoteId, pc);
+      if (localStream) {
+        localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
+      }
+      pc.onicecandidate = (e) => {
+        if (e.candidate) socket.emit('webrtc-ice', { to: remoteId, candidate: e.candidate });
+      };
+      pc.ontrack = (e) => {
+        const audio = new Audio();
+        audio.srcObject = e.streams[0];
+        audio.play().catch(() => {});
+      };
+      if (initiator) {
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        socket.emit('webrtc-offer', { to: remoteId, offer });
+      }
+      return pc;
+    }
+
+    function updateLobbyList(list) {
+      const ul = $('playerList');
+      ul.innerHTML = '';
+      (list || []).forEach(p => {
+        const li = document.createElement('li');
+        li.textContent = `${p.name} ${p.isHost ? '(Host)' : ''} ${p.ready ? '✓' : ''} ${p.micOn ? '🎤' : ''}`;
+        ul.appendChild(li);
+      });
+    }
+
+    $('btnPrevSpec').onclick = () => {
+      if (!spectatorIds.length) return;
+      spectatorIndex = (spectatorIndex - 1 + spectatorIds.length) % spectatorIds.length;
+      updateSpecName();
+    };
+    $('btnNextSpec').onclick = () => {
+      if (!spectatorIds.length) return;
+      spectatorIndex = (spectatorIndex + 1) % spectatorIds.length;
+      updateSpecName();
+    };
+
+    // Mobile controls
+    if (isMobile) {
+      const zone = $('joystickZone');
+      const knob = $('joystickKnob');
+      const onStart = (e) => { joystick.active = true; e.preventDefault(); };
+      const onMove = (e) => {
+        const t = e.touches ? e.touches[0] : e;
+        const rect = zone.getBoundingClientRect();
+        let dx = (t.clientX - rect.left - 65) / 48;
+        let dy = (t.clientY - rect.top - 65) / 48;
+        const len = Math.hypot(dx, dy);
+        if (len > 1) { dx /= len; dy /= len; }
+        joystick.dx = dx; joystick.dy = dy;
+        knob.style.left = (38 + dx * 38) + 'px';
+        knob.style.top = (38 + dy * 38) + 'px';
+      };
+      const onEnd = () => {
+        joystick.active = false; joystick.dx = 0; joystick.dy = 0;
+        knob.style.left = '38px'; knob.style.top = '38px';
+      };
+      zone.addEventListener('touchstart', onStart, { passive: false });
+      zone.addEventListener('touchmove', onMove, { passive: false });
+      zone.addEventListener('touchend', onEnd);
+
+      // Look
+      let lastTX = 0, lastTY = 0, looking = false;
+      $('gameCanvas').addEventListener('touchstart', (e) => {
+        if (e.touches[0].clientX > innerWidth * 0.35) {
+          looking = true;
+          lastTX = e.touches[0].clientX;
+          lastTY = e.touches[0].clientY;
+        }
+      }, { passive: true });
+      $('gameCanvas').addEventListener('touchmove', (e) => {
+        if (!looking) return;
+        const t = e.touches[0];
+        const dx = t.clientX - lastTX;
+        const dy = t.clientY - lastTY;
+        if (controls) {
+          controls.getObject().rotation.y -= dx * 0.004;
+          camera.rotation.x -= dy * 0.004;
+          camera.rotation.x = Math.max(-1.3, Math.min(1.3, camera.rotation.x));
+        }
+        lastTX = t.clientX; lastTY = t.clientY;
+      }, { passive: true });
+      $('gameCanvas').addEventListener('touchend', () => looking = false);
+
+      $('btnFlash').addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        localPlayer.flashlight = !localPlayer.flashlight;
+      });
+      $('btnKnife').addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        socket.emit('knifeHit');
+      });
+      $('btnDebugJS').addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        if (localPlayer.status === 'alive') socket.emit('debugJumpscare');
+      });
+      $('btnRevive').addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        startReviveHold();
+      });
+      $('btnRevive').addEventListener('touchend', () => stopReviveHold());
+      $('btnCrouch').addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        keys['KeyC'] = true;
+      });
+      $('btnCrouch').addEventListener('touchend', () => { keys['KeyC'] = false; });
+    }
+
+    // Desktop debug jumpscare button also
+    $('btnDebugJS').onclick = () => {
+      if (localPlayer.status === 'alive') socket.emit('debugJumpscare');
+    };
+
+    // Start
+    initThree();
+    setStatus('Siap. Pilih menu.');
+  </script>
+</body>
+</html>
